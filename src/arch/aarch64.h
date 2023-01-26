@@ -1,6 +1,6 @@
 // Page table entry
-#define PT_BLOCK         (1UL << 0)   // 2MiB granule
-#define PT_PAGE          (3UL << 0)   // 4KiB granule
+#define PT_PRE           (3UL << 0)   // present / valid
+#define PT_NOT_LEAF      (1UL << 1)   // table not a block
 #define PT_MEM           (0UL << 2)   // attribute index: normal memory
 #define PT_USER          (1UL << 6)   // unprivileged
 #define PT_RO            (1UL << 7)   // read-only

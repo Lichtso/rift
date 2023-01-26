@@ -4,7 +4,7 @@
 #define PT_USER          (1UL << 2)   // unprivileged
 #define PT_ACC           (1UL << 5)   // accessed flag
 #define PT_DIRTY         (1UL << 6)   // write accessed flag
-#define PT_PS            (1UL << 7)   // 1GiB / 2MiB granule
+#define PT_LEAF          (1UL << 7)   // block not a table
 #define PT_G             (1UL << 8)   // keep in TLB on context switch
 #define PT_NX            (1UL << 63)  // no execute
 

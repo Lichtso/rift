@@ -38,7 +38,7 @@ void wvmcs(struct vcpu* vcpu, uint32_t id, uint64_t v) {
 #endif
 #endif
 
-struct vcpu* create_vcpu(struct vm* vm, uint64_t page_table) {
+struct vcpu* create_vcpu(struct vm* vm, uint64_t page_table_root) {
     struct vcpu* vcpu = malloc(sizeof(struct vcpu));
     vcpu->vm = vm;
 #ifdef __linux__
@@ -56,7 +56,6 @@ struct vcpu* create_vcpu(struct vm* vm, uint64_t page_table) {
     uint64_t mmfr = rreg(vcpu, MSR_ID(ID_AA64MMFR0_EL1));
 #endif
 #elif __APPLE__
-    assert(vm->initialized);
 #ifdef __x86_64__
     assert(hv_vcpu_create(&vcpu->id, HV_VCPU_DEFAULT) == 0);
     // Configure control registers
@@ -119,13 +118,13 @@ struct vcpu* create_vcpu(struct vm* vm, uint64_t page_table) {
     uint64_t efer = EFER_NXE | EFER_LMA | EFER_LME;
 #ifdef __linux__
     sregs.cr0 = cr0;
-    sregs.cr3 = page_table;
+    sregs.cr3 = page_table_root;
     sregs.cr4 = cr4;
     sregs.efer = efer;
     vcpu_ctl(vcpu, KVM_SET_SREGS, (uint64_t)&sregs);
 #elif __APPLE__
     wvmcs(vcpu, VMCS_GUEST_CR0, cr0);
-    wvmcs(vcpu, VMCS_GUEST_CR3, page_table);
+    wvmcs(vcpu, VMCS_GUEST_CR3, page_table_root);
     wvmcs(vcpu, VMCS_GUEST_CR4, CR4_VMXE | cr4);
     wvmcs(vcpu, VMCS_GUEST_IA32_EFER, efer);
 #endif
@@ -151,15 +150,15 @@ struct vcpu* create_vcpu(struct vm* vm, uint64_t page_table) {
 #ifdef __linux__
     wreg(vcpu, MSR_ID(MAIR_EL1), mair_el1);
     wreg(vcpu, MSR_ID(TCR_EL1), tcr_el1);
-    wreg(vcpu, MSR_ID(TTBR0_EL1), page_table);
-    wreg(vcpu, MSR_ID(TTBR1_EL1), page_table);
+    wreg(vcpu, MSR_ID(TTBR0_EL1), page_table_root);
+    wreg(vcpu, MSR_ID(TTBR1_EL1), page_table_root);
     wreg(vcpu, MSR_ID(SCTLR_EL1), sctlr_el1);
     wreg(vcpu, REG_ID(regs.pstate), pstate);
 #elif __APPLE__
     assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_MAIR_EL1, mair_el1) == 0);
     assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_TCR_EL1, tcr_el1) == 0);
-    assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_TTBR0_EL1, page_table) == 0);
-    assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_TTBR1_EL1, page_table) == 0);
+    assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_TTBR0_EL1, page_table_root) == 0);
+    assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_TTBR1_EL1, page_table_root) == 0);
     assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_SCTLR_EL1, sctlr_el1) == 0);
     assert(hv_vcpu_set_reg(vcpu->id, HV_REG_CPSR, pstate) == 0);
 #endif
@@ -174,7 +173,6 @@ void destroy_vcpu(struct vcpu* vcpu) {
     assert(munmap(vcpu->kvm_run, vcpu_mmap_size) >= 0);
     assert(close(vcpu->fd) >= 0);
 #elif __APPLE__
-    assert(vcpu->vm->initialized);
     assert(hv_vcpu_destroy(vcpu->id) == 0);
 #endif
 }

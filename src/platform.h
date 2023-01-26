@@ -3,10 +3,11 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #ifdef __linux__
-#include <unistd.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <linux/kvm.h>
@@ -33,10 +34,9 @@
 #include <rift.h>
 
 struct vm {
+    struct host_to_guest_mapping mappings[32];
 #ifdef __linux__
     int kvm_fd, fd;
-#elif __APPLE__
-    uint8_t initialized;
 #endif
 };
 
