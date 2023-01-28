@@ -4,12 +4,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
 
 #ifdef __linux__
-#include <fcntl.h>
 #include <stdbool.h>
 #include <sys/ioctl.h>
-#include <sys/mman.h>
 #include <linux/kvm.h>
 #ifdef __aarch64__
 #include <malloc.h>

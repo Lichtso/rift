@@ -39,3 +39,7 @@ void destroy_vcpu(struct vcpu* vcpu);
 void set_program_pointers_of_vcpu(struct vcpu* vcpu, uint64_t instruction_pointer, uint64_t stack_pointer);
 void get_program_pointers_of_vcpu(struct vcpu* vcpu, uint64_t* instruction_pointer, uint64_t* stack_pointer);
 void run_vcpu(struct vcpu* vcpu);
+
+struct loaded_object* load_object_file(struct vm* vm, const char* path);
+void unload_object_file(struct loaded_object* loaded_object);
+struct vcpu* create_vcpu_for_object_file(struct loaded_object* loaded_object);
