@@ -14,7 +14,7 @@ endif
 all: build/librift.a build/librift.$(SHARED_OBJECT) build/payload build/example
 
 build/payload: example/payload.c
-	$(CC) $(CFLAGS) -ffreestanding -nostartfiles -nostdlib $(PAYLOAD_LAYOUT) -o $@ $^
+	$(CC) $(CFLAGS) -ffreestanding -nostartfiles -nostdlib -fvisibility=hidden $(PAYLOAD_LAYOUT) -o $@ $^
 
 build/example: example/main.c build/librift.a
 	$(CC) $(CFLAGS) $(LDFLAGS) $(LDLIBS) -o $@ $^

@@ -9,7 +9,6 @@
 #include <sys/mman.h>
 
 #ifdef __linux__
-#include <stdbool.h>
 #include <sys/ioctl.h>
 #include <linux/kvm.h>
 #ifdef __aarch64__

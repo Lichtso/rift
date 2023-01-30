@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #if !defined(__x86_64__) && !defined(__aarch64__)
 #error Unsupported OS
@@ -31,7 +32,9 @@ struct vm* create_vm();
 void destroy_vm(struct vm* vm);
 void map_memory_of_vm(struct vm* vm, struct host_to_guest_mapping* mapping);
 void unmap_memory_of_vm(struct vm* vm, struct host_to_guest_mapping* mapping);
-uint64_t create_page_table(struct host_to_guest_mapping* page_table, size_t number_of_mappings, struct guest_internal_mapping mappings[number_of_mappings]);
+bool resolve_address_of_vm(struct vm* vm, uint64_t guest_address, void** host_address, uint64_t length);
+void create_page_table(struct host_to_guest_mapping* page_table, uint64_t number_of_mappings, struct guest_internal_mapping mappings[number_of_mappings]);
+bool resolve_address_using_page_table(struct host_to_guest_mapping* page_table, uint64_t virtual_address, uint64_t* physical_address);
 
 struct vcpu;
 struct vcpu* create_vcpu(struct vm* vm, uint64_t page_table_root);
@@ -40,6 +43,8 @@ void set_program_pointers_of_vcpu(struct vcpu* vcpu, uint64_t instruction_pointe
 void get_program_pointers_of_vcpu(struct vcpu* vcpu, uint64_t* instruction_pointer, uint64_t* stack_pointer);
 void run_vcpu(struct vcpu* vcpu);
 
-struct loaded_object* load_object_file(struct vm* vm, const char* path);
-void unload_object_file(struct loaded_object* loaded_object);
-struct vcpu* create_vcpu_for_object_file(struct loaded_object* loaded_object);
+struct loaded_object* create_loaded_object(struct vm* vm, const char* path);
+void destroy_loaded_object(struct loaded_object* loaded_object);
+bool resolve_symbol_virtual_address_in_loaded_object(struct loaded_object* loaded_object, const char* symbol_name, uint64_t* virtual_address);
+bool resolve_symbol_host_address_in_loaded_object(struct loaded_object* loaded_object, const char* symbol_name, uint64_t length, void** host_address);
+struct vcpu* create_vcpu_for_loaded_object(struct loaded_object* loaded_object, const char* entry_point);

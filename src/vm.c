@@ -87,21 +87,36 @@ void unmap_memory_of_vm(struct vm* vm, struct host_to_guest_mapping* mapping) {
 #endif
 }
 
-#define PAGE_TABLE_LEVELS 4
-#define HUGE_PAGE_TABLE_LEVELS 3
-#define GUEST_PAGE_SIZE 0x1000
-const uint64_t entries_per_page = GUEST_PAGE_SIZE / sizeof(uint64_t);
+bool resolve_address_of_vm(struct vm* vm, uint64_t guest_address, void** host_address, uint64_t length) {
+    size_t number_of_mappings = sizeof(vm->mappings) / sizeof(vm->mappings[0]);
+    for(size_t slot = 0; slot < number_of_mappings; ++slot)
+        if(vm->mappings[slot].length > 0 && (slot + 1 == number_of_mappings || guest_address < vm->mappings[slot + 1].guest_address)) {
+            uint64_t offset = guest_address - vm->mappings[slot].guest_address;
+            if(offset + length >= vm->mappings[slot].length)
+                return false;
+            *host_address = (void*)(offset + (uint64_t)vm->mappings[slot].host_address);
+            return true;
+        }
+    return false;
+}
+
+#define GUEST_PAGE_TABLE_LEVELS 4
+#define GUEST_HUGE_PAGE_TABLE_LEVELS 3
+#define GUEST_ENTRIES_PER_PAGE_SHIFT 9
+#define GUEST_ENTRIES_PER_PAGE (1UL << GUEST_ENTRIES_PER_PAGE_SHIFT)
+#define GUEST_PAGE_SIZE (1UL << (GUEST_ENTRIES_PER_PAGE_SHIFT + 3))
+#define GUEST_ENTRY_ADDRESS_MASK (~((0xFFFFUL << 48) | (GUEST_PAGE_SIZE - 1)))
 
 #define MAPPING_LEVELS_LOOP \
     uint64_t end_virtual_address; \
     if(mapping_index + 1 < number_of_mappings) \
         end_virtual_address = mappings[mapping_index + 1].virtual_address; \
     else \
-        end_virtual_address = level_page_size[PAGE_TABLE_LEVELS]; \
+        end_virtual_address = level_page_size[GUEST_PAGE_TABLE_LEVELS]; \
     if(mapping->flags == MAPPING_GAP) \
         continue; \
     uint64_t gap_start_entry_index = 0, gap_end_entry_index = 0; \
-    for(size_t parent_level = PAGE_TABLE_LEVELS; parent_level > 0; --parent_level) { \
+    for(size_t parent_level = GUEST_PAGE_TABLE_LEVELS; parent_level > 0; --parent_level) { \
         size_t level = parent_level - 1; \
         uint64_t start_entry_index = mapping->virtual_address / level_page_size[level]; \
         uint64_t end_entry_index = (end_virtual_address + level_page_size[level] - 1) / level_page_size[level]; \
@@ -120,8 +135,8 @@ const uint64_t entries_per_page = GUEST_PAGE_SIZE / sizeof(uint64_t);
 #define MAPPING_LEVELS_LOOP_END \
         level_number_of_entries[level] += (gap_start_entry_index - start_entry_index) + (end_entry_index - gap_end_entry_index); \
         level_entry_index[level] = end_entry_index; \
-        gap_start_entry_index = leaves_start_entry_index * entries_per_page; \
-        gap_end_entry_index = leaves_end_entry_index * entries_per_page; \
+        gap_start_entry_index = leaves_start_entry_index * GUEST_ENTRIES_PER_PAGE; \
+        gap_end_entry_index = leaves_end_entry_index * GUEST_ENTRIES_PER_PAGE; \
     }
 
 #define WRITE_ENTRY { \
@@ -136,16 +151,16 @@ const uint64_t entries_per_page = GUEST_PAGE_SIZE / sizeof(uint64_t);
         : branch_proto_entry | ((relative_entry_index + level_number_of_entries[level]) * GUEST_PAGE_SIZE + level_physical_address[level - 1]); \
 }
 
-uint64_t create_page_table(struct host_to_guest_mapping* page_table, size_t number_of_mappings, struct guest_internal_mapping mappings[number_of_mappings]) {
+void create_page_table(struct host_to_guest_mapping* page_table, uint64_t number_of_mappings, struct guest_internal_mapping mappings[number_of_mappings]) {
     assert(number_of_mappings > 0);
-    uint64_t level_physical_address[PAGE_TABLE_LEVELS];
-    uint64_t level_page_size[PAGE_TABLE_LEVELS + 1];
-    uint64_t level_number_of_entries[PAGE_TABLE_LEVELS + 1];
-    uint64_t level_entry_index[PAGE_TABLE_LEVELS];
+    uint64_t level_physical_address[GUEST_PAGE_TABLE_LEVELS];
+    uint64_t level_page_size[GUEST_PAGE_TABLE_LEVELS + 1];
+    uint64_t level_number_of_entries[GUEST_PAGE_TABLE_LEVELS + 1];
+    uint64_t level_entry_index[GUEST_PAGE_TABLE_LEVELS];
     level_page_size[0] = GUEST_PAGE_SIZE;
-    level_number_of_entries[PAGE_TABLE_LEVELS] = 1;
-    for(size_t level = 0; level < PAGE_TABLE_LEVELS; ++level) {
-        level_page_size[level + 1] = level_page_size[level] * entries_per_page;
+    level_number_of_entries[GUEST_PAGE_TABLE_LEVELS] = 1;
+    for(size_t level = 0; level < GUEST_PAGE_TABLE_LEVELS; ++level) {
+        level_page_size[level + 1] = level_page_size[level] * GUEST_ENTRIES_PER_PAGE;
         level_number_of_entries[level] = 0;
         level_entry_index[level] = 0;
     }
@@ -165,16 +180,16 @@ uint64_t create_page_table(struct host_to_guest_mapping* page_table, size_t numb
         }
         MAPPING_LEVELS_LOOP
             (void)real_start_entry_index;
-            assert(level < HUGE_PAGE_TABLE_LEVELS || mapping->flags == MAPPING_GAP || leaves_start_entry_index >= leaves_end_entry_index);
+            assert(level < GUEST_HUGE_PAGE_TABLE_LEVELS || mapping->flags == MAPPING_GAP || leaves_start_entry_index >= leaves_end_entry_index);
         MAPPING_LEVELS_LOOP_END
     }
     page_table->length = 0;
-    for(size_t parent_level = PAGE_TABLE_LEVELS; parent_level > 0; --parent_level) {
+    for(size_t parent_level = GUEST_PAGE_TABLE_LEVELS; parent_level > 0; --parent_level) {
         size_t level = parent_level - 1;
         level_physical_address[level] = page_table->guest_address + page_table->length;
         page_table->length += level_number_of_entries[parent_level] * GUEST_PAGE_SIZE;
     }
-    for(size_t level = 0; level < PAGE_TABLE_LEVELS; ++level) {
+    for(size_t level = 0; level < GUEST_PAGE_TABLE_LEVELS; ++level) {
         level_number_of_entries[level] = 0;
         level_entry_index[level] = 0;
     }
@@ -207,7 +222,7 @@ uint64_t create_page_table(struct host_to_guest_mapping* page_table, size_t numb
             mapping_proto_entry |= PT_NX;
 #endif
         uint64_t parent_start_entry_index = 0, parent_leaves_start_entry_index = 0;
-        uint64_t* entries = (uint64_t*)(level_physical_address[PAGE_TABLE_LEVELS - 1] - page_table->guest_address + (uint64_t)page_table->host_address);
+        uint64_t* entries = (uint64_t*)(level_physical_address[GUEST_PAGE_TABLE_LEVELS - 1] - page_table->guest_address + (uint64_t)page_table->host_address);
         MAPPING_LEVELS_LOOP
             uint64_t leaf_proto_entry = mapping_proto_entry;
             if(level > 0)
@@ -220,12 +235,31 @@ uint64_t create_page_table(struct host_to_guest_mapping* page_table, size_t numb
                 WRITE_ENTRY
             for(uint64_t entry_index = gap_end_entry_index; entry_index < end_entry_index; ++entry_index)
                 WRITE_ENTRY
-            parent_start_entry_index = real_start_entry_index * entries_per_page;
-            parent_leaves_start_entry_index = leaves_start_entry_index * entries_per_page;
+            parent_start_entry_index = real_start_entry_index * GUEST_ENTRIES_PER_PAGE;
+            parent_leaves_start_entry_index = leaves_start_entry_index * GUEST_ENTRIES_PER_PAGE;
             uint64_t page_offset = (level_number_of_entries[level] + real_start_entry_index - start_entry_index) * GUEST_PAGE_SIZE;
             if(level > 0)
                 entries = (uint64_t*)(page_offset + level_physical_address[level - 1] - page_table->guest_address + (uint64_t)page_table->host_address);
         MAPPING_LEVELS_LOOP_END
     }
-    return level_physical_address[PAGE_TABLE_LEVELS - 1];
+}
+
+bool resolve_address_using_page_table(struct host_to_guest_mapping* page_table, uint64_t virtual_address, uint64_t* physical_address) {
+    *physical_address = page_table->guest_address;
+    size_t parent_level;
+    for(parent_level = GUEST_PAGE_TABLE_LEVELS; parent_level > 0; --parent_level) {
+        uint64_t slot_index = (virtual_address >> (GUEST_ENTRIES_PER_PAGE_SHIFT * parent_level + 3)) & (GUEST_ENTRIES_PER_PAGE - 1);
+        uint64_t* entry = (uint64_t*)(*physical_address - page_table->guest_address + slot_index * sizeof(uint64_t) + (uint64_t)page_table->host_address);
+        if((*entry & 1) == 0)
+            return false;
+        *physical_address = *entry & GUEST_ENTRY_ADDRESS_MASK;
+#ifdef __x86_64__
+        if((*entry & PT_LEAF) != 0)
+#elif __aarch64__
+        if((*entry & PT_NOT_LEAF) == 0)
+#endif
+            break;
+    }
+    *physical_address += virtual_address & ((1UL << (GUEST_ENTRIES_PER_PAGE_SHIFT * parent_level + 3)) - 1);
+    return true;
 }

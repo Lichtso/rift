@@ -113,25 +113,27 @@ struct mach_symbol_table_entry_64 {
 };
 
 struct loaded_object {
-    uint64_t page_table_root;
-    uint64_t instruction_pointer;
+    uint64_t file_size;
+    uint64_t number_of_symbols;
     uint64_t stack_pointer;
     struct host_to_guest_mapping file_data;
     struct host_to_guest_mapping writable_data;
     struct host_to_guest_mapping page_table;
+    const char* symbol_names;
+    void* symbol_table;
     struct vm* vm;
     int fd;
 };
 
-struct loaded_object* load_object_file(struct vm* vm, const char* path) {
+struct loaded_object* create_loaded_object(struct vm* vm, const char* path) {
     struct loaded_object* loaded_object = malloc(sizeof(struct loaded_object));
     loaded_object->vm = vm;
     loaded_object->fd = open(path, O_RDONLY);
     struct stat stat;
     fstat(loaded_object->fd, &stat);
-    uint64_t file_size = (uint64_t)stat.st_size;
+    loaded_object->file_size = (uint64_t)stat.st_size;
     loaded_object->file_data.guest_address = 0;
-    loaded_object->file_data.host_address = mmap(0, file_size, PROT_READ, MAP_FILE | MAP_PRIVATE, loaded_object->fd, 0);
+    loaded_object->file_data.host_address = mmap(0, loaded_object->file_size, PROT_READ, MAP_FILE | MAP_PRIVATE, loaded_object->fd, 0);
     assert(loaded_object->file_data.host_address != MAP_FAILED);
     uint32_t magic = *(uint32_t*)loaded_object->file_data.host_address;
     size_t mapping_index = 2;
@@ -157,6 +159,7 @@ struct loaded_object* load_object_file(struct vm* vm, const char* path) {
     }
     struct guest_internal_mapping mappings[mapping_index];
     mapping_index = 0;
+    loaded_object->symbol_names = NULL;
     loaded_object->writable_data.length = 0;
     uint64_t next_virtual_address = 0, writable_data_preinit_length = 0;
     if(magic == ELF_MAGIC) {
@@ -199,27 +202,22 @@ struct loaded_object* load_object_file(struct vm* vm, const char* path) {
         }
         struct elf64_shdr* shdrs = (struct elf64_shdr*)((uint64_t)elf_header + elf_header->e_shoff);
         const char* shdr_names = (const char*)((uint64_t)elf_header + shdrs[elf_header->e_shstrndx].sh_offset);
-        const char* symbol_names = NULL;
         for(size_t i = 0; i < elf_header->e_shnum; ++i) {
             struct elf64_shdr* shdr = &shdrs[i];
             switch(shdr->sh_type) {
                 case SHT_STRTAB: {
                     if(strcmp(shdr_names + shdr->sh_name, ".strtab") == 0)
-                        symbol_names = (const char*)((uint64_t)elf_header + shdr->sh_offset);
+                        loaded_object->symbol_names = (const char*)((uint64_t)elf_header + shdr->sh_offset);
                 } break;
             }
         }
-        assert(symbol_names);
+        assert(loaded_object->symbol_names);
         for(size_t i = 0; i < elf_header->e_shnum; ++i) {
             struct elf64_shdr* shdr = &shdrs[i];
             switch(shdr->sh_type) {
                 case SHT_SYMTAB: {
-                    struct elf64_sym* symbols = (struct elf64_sym*)((uint64_t)elf_header + shdr->sh_offset);
-                    for(size_t i = 0; i < shdr->sh_size / sizeof(struct elf64_sym); ++i)
-                        if(symbols[i].st_info == 0x12 && strcmp(symbol_names + symbols[i].st_name, "start") == 0) {
-                            loaded_object->instruction_pointer = symbols[i].st_value;
-                            break;
-                        }
+                    loaded_object->symbol_table = (void*)((uint64_t)elf_header + shdr->sh_offset);
+                    loaded_object->number_of_symbols = shdr->sh_size / sizeof(struct elf64_sym);
                 } break;
             }
         }
@@ -256,17 +254,14 @@ struct loaded_object* load_object_file(struct vm* vm, const char* path) {
                 } break;
                 case LC_SYMTAB: {
                     struct mach_symbol_table* command = (struct mach_symbol_table*)mach_command;
-                    struct mach_symbol_table_entry_64* symbols = (struct mach_symbol_table_entry_64*)((uint64_t)mach_header + command->symoff);
-                    const char* names = (const char*)((uint64_t)mach_header + command->stroff);
-                    for(size_t i = 0; i < command->nsyms; ++i)
-                        if(strcmp(names + symbols[i].n_strx, "_start") == 0) {
-                            loaded_object->instruction_pointer = symbols[i].n_value;
-                            break;
-                        }
+                    loaded_object->symbol_names = (const char*)((uint64_t)mach_header + command->stroff);
+                    loaded_object->symbol_table = (void*)((uint64_t)mach_header + command->symoff);
+                    loaded_object->number_of_symbols = command->nsyms;
                 } break;
             }
             mach_command = (struct mach_command*)((uint64_t)mach_command + mach_command->cmdsize);
         }
+        assert(loaded_object->symbol_names);
     }
     mappings[mapping_index].virtual_address = next_virtual_address;
     mappings[mapping_index].physical_address = 0;
@@ -277,9 +272,8 @@ struct loaded_object* load_object_file(struct vm* vm, const char* path) {
     assert(loaded_object->writable_data.host_address);
     memcpy(loaded_object->writable_data.host_address, writable_data_source, writable_data_preinit_length);
     loaded_object->file_data.length = loaded_object->writable_data.guest_address;
-    assert(munmap((uint8_t*)loaded_object->file_data.host_address + loaded_object->file_data.length, file_size - loaded_object->file_data.length) == 0);
     loaded_object->page_table.guest_address = loaded_object->writable_data.guest_address + loaded_object->writable_data.length;
-    loaded_object->page_table_root = create_page_table(&loaded_object->page_table, mapping_index, mappings);
+    create_page_table(&loaded_object->page_table, mapping_index, mappings);
     loaded_object->stack_pointer = next_virtual_address;
     map_memory_of_vm(loaded_object->vm, &loaded_object->file_data);
     map_memory_of_vm(loaded_object->vm, &loaded_object->writable_data);
@@ -287,19 +281,52 @@ struct loaded_object* load_object_file(struct vm* vm, const char* path) {
     return loaded_object;
 }
 
-void unload_object_file(struct loaded_object* loaded_object) {
+void destroy_loaded_object(struct loaded_object* loaded_object) {
     unmap_memory_of_vm(loaded_object->vm, &loaded_object->file_data);
     unmap_memory_of_vm(loaded_object->vm, &loaded_object->writable_data);
     unmap_memory_of_vm(loaded_object->vm, &loaded_object->page_table);
-    assert(munmap(loaded_object->file_data.host_address, loaded_object->file_data.length) == 0);
+    assert(munmap(loaded_object->file_data.host_address, loaded_object->file_size) == 0);
     assert(close(loaded_object->fd) == 0);
     free(loaded_object->writable_data.host_address);
     free(loaded_object->page_table.host_address);
     free(loaded_object);
 }
 
-struct vcpu* create_vcpu_for_object_file(struct loaded_object* loaded_object) {
-    struct vcpu* vcpu = create_vcpu(loaded_object->vm, loaded_object->page_table_root);
-    set_program_pointers_of_vcpu(vcpu, loaded_object->instruction_pointer, loaded_object->stack_pointer);
+bool resolve_symbol_virtual_address_in_loaded_object(struct loaded_object* loaded_object, const char* symbol_name, uint64_t* virtual_address) {
+    uint32_t magic = *(uint32_t*)loaded_object->file_data.host_address;
+    switch(magic) {
+        case ELF_MAGIC: {
+            struct elf64_sym* symbols = (struct elf64_sym*)loaded_object->symbol_table;
+            for(size_t i = 0; i < loaded_object->number_of_symbols; ++i)
+                if(symbols[i].st_info & 0x10 && strcmp(loaded_object->symbol_names + symbols[i].st_name, symbol_name) == 0) {
+                    *virtual_address = symbols[i].st_value;
+                    return true;
+                }
+        } break;
+        case MACH_MAGIC: {
+            struct mach_symbol_table_entry_64* symbols = (struct mach_symbol_table_entry_64*)loaded_object->symbol_table;
+            for(size_t i = 0; i < loaded_object->number_of_symbols; ++i)
+                if(strcmp(loaded_object->symbol_names + symbols[i].n_strx, symbol_name) == 0) {
+                    *virtual_address = symbols[i].n_value;
+                    return true;
+                }
+        } break;
+    }
+    return false;
+}
+
+bool resolve_symbol_host_address_in_loaded_object(struct loaded_object* loaded_object, const char* symbol_name, uint64_t length, void** host_address) {
+    uint64_t virtual_address;
+    uint64_t physical_address;
+    return resolve_symbol_virtual_address_in_loaded_object(loaded_object, symbol_name, &virtual_address) &&
+        resolve_address_using_page_table(&loaded_object->page_table, virtual_address, &physical_address) &&
+        resolve_address_of_vm(loaded_object->vm, physical_address, host_address, length);
+}
+
+struct vcpu* create_vcpu_for_loaded_object(struct loaded_object* loaded_object, const char* entry_point) {
+    uint64_t instruction_pointer;
+    assert(resolve_symbol_virtual_address_in_loaded_object(loaded_object, entry_point, &instruction_pointer));
+    struct vcpu* vcpu = create_vcpu(loaded_object->vm, loaded_object->page_table.guest_address);
+    set_program_pointers_of_vcpu(vcpu, instruction_pointer, loaded_object->stack_pointer);
     return vcpu;
 }

@@ -1,13 +1,15 @@
-static char data[4] = { 1, 2, 3, 4 };
-static char bss[0x10000UL];
+#define EXPORT __attribute__((visibility("default")))
+
 static const char rodata[4] = { 1, 2, 3, 4 };
+EXPORT char data[4] = { 1, 2, 3, 4 };
+static char bss[0x10000UL];
 
 void test() {
-    bss[0] = rodata[0];
     data[1] = 5;
+    bss[2] = rodata[0];
 }
 
-void start() {
+EXPORT void start() {
     test();
 #ifdef __x86_64__
     __asm__("hlt");
