@@ -101,7 +101,7 @@ bool resolve_address_of_vm(struct vm* vm, uint64_t guest_address, void** host_ad
 }
 
 #define GUEST_PAGE_TABLE_LEVELS 4
-#define GUEST_HUGE_PAGE_TABLE_LEVELS 3
+#define GUEST_HUGE_PAGE_TABLE_LEVELS 0
 #define GUEST_ENTRIES_PER_PAGE_SHIFT 9
 #define GUEST_ENTRIES_PER_PAGE (1UL << GUEST_ENTRIES_PER_PAGE_SHIFT)
 #define GUEST_PAGE_SIZE (1UL << (GUEST_ENTRIES_PER_PAGE_SHIFT + 3))
@@ -130,7 +130,9 @@ bool resolve_address_of_vm(struct vm* vm, uint64_t guest_address, void** host_ad
         if(gap_end_entry_index < gap_start_entry_index) \
             gap_end_entry_index = gap_start_entry_index; \
         uint64_t leaves_start_entry_index = (mapping->virtual_address + level_page_size[level] - 1) / level_page_size[level]; \
-        uint64_t leaves_end_entry_index = end_virtual_address / level_page_size[level];
+        uint64_t leaves_end_entry_index = end_virtual_address / level_page_size[level]; \
+        if(level > GUEST_HUGE_PAGE_TABLE_LEVELS) \
+            leaves_end_entry_index = leaves_start_entry_index;
 
 #define MAPPING_LEVELS_LOOP_END \
         level_number_of_entries[level] += (gap_start_entry_index - start_entry_index) + (end_entry_index - gap_end_entry_index); \
@@ -180,7 +182,6 @@ void create_page_table(struct host_to_guest_mapping* page_table, uint64_t number
         }
         MAPPING_LEVELS_LOOP
             (void)real_start_entry_index;
-            assert(level < GUEST_HUGE_PAGE_TABLE_LEVELS || mapping->flags == MAPPING_GAP || leaves_start_entry_index >= leaves_end_entry_index);
         MAPPING_LEVELS_LOOP_END
     }
     page_table->length = 0;
