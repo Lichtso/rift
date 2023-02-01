@@ -92,7 +92,7 @@ bool resolve_address_of_vm(struct vm* vm, uint64_t guest_address, void** host_ad
     for(size_t slot = 0; slot < number_of_mappings; ++slot)
         if(vm->mappings[slot].length > 0 && (slot + 1 == number_of_mappings || guest_address < vm->mappings[slot + 1].guest_address)) {
             uint64_t offset = guest_address - vm->mappings[slot].guest_address;
-            if(offset + length >= vm->mappings[slot].length)
+            if(offset + length > vm->mappings[slot].length)
                 return false;
             *host_address = (void*)(offset + (uint64_t)vm->mappings[slot].host_address);
             return true;

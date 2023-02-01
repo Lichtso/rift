@@ -298,7 +298,7 @@ bool resolve_symbol_virtual_address_in_loaded_object(struct loaded_object* loade
         case ELF_MAGIC: {
             struct elf64_sym* symbols = (struct elf64_sym*)loaded_object->symbol_table;
             for(size_t i = 0; i < loaded_object->number_of_symbols; ++i)
-                if(symbols[i].st_info & 0x10 && strcmp(loaded_object->symbol_names + symbols[i].st_name, symbol_name) == 0) {
+                if(strcmp(loaded_object->symbol_names + symbols[i].st_name, symbol_name) == 0) {
                     *virtual_address = symbols[i].st_value;
                     return true;
                 }
