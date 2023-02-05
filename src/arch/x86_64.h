@@ -1,3 +1,5 @@
+#define NUMBER_OF_REGISTERS 18
+
 // Page table entry
 #define PT_PRE           (1UL << 0)   // present / valid
 #define PT_RW            (1UL << 1)   // read-write

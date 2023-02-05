@@ -245,22 +245,31 @@ void create_page_table(struct host_to_guest_mapping* page_table, uint64_t number
     }
 }
 
-bool resolve_address_using_page_table(struct host_to_guest_mapping* page_table, uint64_t virtual_address, uint64_t* physical_address) {
+bool resolve_address_using_page_table(struct host_to_guest_mapping* page_table, bool write, uint64_t virtual_address, uint64_t* physical_address) {
     *physical_address = page_table->guest_address;
-    size_t parent_level;
-    for(parent_level = GUEST_PAGE_TABLE_LEVELS; parent_level > 0; --parent_level) {
+    size_t parent_level = GUEST_PAGE_TABLE_LEVELS;
+    while(1) {
         uint64_t slot_index = (virtual_address >> (GUEST_ENTRIES_PER_PAGE_SHIFT * parent_level + 3)) & (GUEST_ENTRIES_PER_PAGE - 1);
         uint64_t* entry = (uint64_t*)(*physical_address - page_table->guest_address + slot_index * sizeof(uint64_t) + (uint64_t)page_table->host_address);
-        if((*entry & 1) == 0)
+        if((*entry & 1) == 0 || (write &&
+#ifdef __x86_64__
+        (*entry & PT_RW) == 0
+#elif __aarch64__
+        (*entry & PT_RO) != 0
+#endif
+        ))
             return false;
         *physical_address = *entry & GUEST_ENTRY_ADDRESS_MASK;
+        if(parent_level == 1 ||
 #ifdef __x86_64__
-        if((*entry & PT_LEAF) != 0)
+        (*entry & PT_LEAF) != 0
 #elif __aarch64__
-        if((*entry & PT_NOT_LEAF) == 0)
+        (*entry & PT_NOT_LEAF) == 0
 #endif
+        )
             break;
+        --parent_level;
     }
-    *physical_address += virtual_address & ((1UL << (GUEST_ENTRIES_PER_PAGE_SHIFT * parent_level + 3)) - 1);
+    *physical_address += virtual_address & (((uint64_t)1UL << (GUEST_ENTRIES_PER_PAGE_SHIFT * parent_level + 3)) - 1UL);
     return true;
 }

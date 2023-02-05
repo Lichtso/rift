@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
 
     // Check result
     uint8_t* data;
-    assert(resolve_symbol_host_address_in_loaded_object(loaded_object, SYMBOL_NAME_PREFIX "data", 4, (void**)&data));
+    assert(resolve_symbol_host_address_in_loaded_object(loaded_object, false, SYMBOL_NAME_PREFIX "data", 4, (void**)&data));
     assert(data[0] == 1 && data[1] == 5 && data[2] == 3 && data[3] == 4);
 
     // Cleanup

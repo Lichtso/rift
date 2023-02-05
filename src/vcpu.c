@@ -4,10 +4,11 @@
 void vcpu_ctl(struct vcpu* vcpu, uint32_t request, uint64_t param) {
     assert(ioctl(vcpu->fd, request, param) >= 0);
 }
-#ifdef __aarch64__
+#ifdef __x86_64__
+#define REG_ID(field) offsetof(struct kvm_regs, field) / sizeof(uint64_t)
+#elif __aarch64__
 #define REG_ID(field) KVM_REG_ARM64 | KVM_REG_SIZE_U64 | KVM_REG_ARM_CORE | offsetof(struct kvm_regs, field) / sizeof(uint32_t)
 #define MSR_ID(field) KVM_REG_ARM64 | KVM_REG_SIZE_U64 | KVM_REG_ARM64_SYSREG | field
-
 uint64_t rreg(struct vcpu* vcpu, uint64_t id) {
     uint64_t v;
     struct kvm_one_reg reg;
@@ -38,9 +39,10 @@ void wvmcs(struct vcpu* vcpu, uint32_t id, uint64_t v) {
 #endif
 #endif
 
-struct vcpu* create_vcpu(struct vm* vm, uint64_t page_table_root) {
+struct vcpu* create_vcpu(struct vm* vm, struct host_to_guest_mapping* page_table) {
     struct vcpu* vcpu = malloc(sizeof(struct vcpu));
     vcpu->vm = vm;
+    vcpu->page_table = page_table;
 #ifdef __linux__
     vcpu->fd = ioctl(vm->fd, KVM_CREATE_VCPU, 0);
     assert(vcpu->fd >= 0);
@@ -116,17 +118,23 @@ struct vcpu* create_vcpu(struct vm* vm, uint64_t page_table_root) {
     uint64_t cr0 = CR0_PG | CR0_WP | CR0_NE | CR0_PE;
     uint64_t cr4 = CR4_PAE;
     uint64_t efer = EFER_NXE | EFER_LMA | EFER_LME;
+    uint64_t rflags = 1L<<1;
 #ifdef __linux__
     sregs.cr0 = cr0;
-    sregs.cr3 = page_table_root;
+    sregs.cr3 = vcpu->page_table->guest_address;
     sregs.cr4 = cr4;
     sregs.efer = efer;
     vcpu_ctl(vcpu, KVM_SET_SREGS, (uint64_t)&sregs);
+    struct kvm_regs regs;
+    vcpu_ctl(vcpu, KVM_GET_REGS, (uint64_t)&regs);
+    regs.rflags = rflags;
+    vcpu_ctl(vcpu, KVM_SET_REGS, (uint64_t)&regs);
 #elif __APPLE__
     wvmcs(vcpu, VMCS_GUEST_CR0, cr0);
-    wvmcs(vcpu, VMCS_GUEST_CR3, page_table_root);
+    wvmcs(vcpu, VMCS_GUEST_CR3, vcpu->page_table->guest_address);
     wvmcs(vcpu, VMCS_GUEST_CR4, CR4_VMXE | cr4);
     wvmcs(vcpu, VMCS_GUEST_IA32_EFER, efer);
+    wvmcs(vcpu, VMCS_GUEST_RFLAGS, rflags);
 #endif
 #elif __aarch64__
     assert((mmfr & 0xF) >= 1); // At least 36 bits physical address range
@@ -150,15 +158,15 @@ struct vcpu* create_vcpu(struct vm* vm, uint64_t page_table_root) {
 #ifdef __linux__
     wreg(vcpu, MSR_ID(MAIR_EL1), mair_el1);
     wreg(vcpu, MSR_ID(TCR_EL1), tcr_el1);
-    wreg(vcpu, MSR_ID(TTBR0_EL1), page_table_root);
-    wreg(vcpu, MSR_ID(TTBR1_EL1), page_table_root);
+    wreg(vcpu, MSR_ID(TTBR0_EL1), vcpu->page_table->guest_address);
+    wreg(vcpu, MSR_ID(TTBR1_EL1), vcpu->page_table->guest_address);
     wreg(vcpu, MSR_ID(SCTLR_EL1), sctlr_el1);
     wreg(vcpu, REG_ID(regs.pstate), pstate);
 #elif __APPLE__
     assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_MAIR_EL1, mair_el1) == 0);
     assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_TCR_EL1, tcr_el1) == 0);
-    assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_TTBR0_EL1, page_table_root) == 0);
-    assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_TTBR1_EL1, page_table_root) == 0);
+    assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_TTBR0_EL1, vcpu->page_table->guest_address) == 0);
+    assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_TTBR1_EL1, vcpu->page_table->guest_address) == 0);
     assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_SCTLR_EL1, sctlr_el1) == 0);
     assert(hv_vcpu_set_reg(vcpu->id, HV_REG_CPSR, pstate) == 0);
 #endif
@@ -177,49 +185,118 @@ void destroy_vcpu(struct vcpu* vcpu) {
 #endif
 }
 
-void set_program_pointers_of_vcpu(struct vcpu* vcpu, uint64_t instruction_pointer, uint64_t stack_pointer) {
+struct host_to_guest_mapping* get_page_table_of_vcpu(struct vcpu* vcpu) {
+    return vcpu->page_table;
+}
+
 #ifdef __x86_64__
 #ifdef __linux__
-    struct kvm_regs regs;
-    memset(&regs, 0, sizeof(regs));
-    regs.rflags = 1L<<1;
-    regs.rip = instruction_pointer;
-    regs.rsp = stack_pointer;
-    vcpu_ctl(vcpu, KVM_SET_REGS, (uint64_t)&regs);
+static const uint64_t register_mapping[NUMBER_OF_REGISTERS] = {
+    REG_ID(rax), REG_ID(rbx), REG_ID(rcx), REG_ID(rdx), REG_ID(rsi), REG_ID(rdi), REG_ID(rsp), REG_ID(rbp),
+    REG_ID(r8), REG_ID(r9), REG_ID(r10), REG_ID(r11), REG_ID(r12), REG_ID(r13), REG_ID(r14), REG_ID(r15),
+    REG_ID(rip), REG_ID(rflags)
+};
 #elif __APPLE__
-    wvmcs(vcpu, VMCS_GUEST_RFLAGS, 1L<<1);
-    wvmcs(vcpu, VMCS_GUEST_RIP, instruction_pointer);
-    wvmcs(vcpu, VMCS_GUEST_RSP, stack_pointer);
+static const hv_x86_reg_t register_mapping[NUMBER_OF_REGISTERS] = {
+    HV_X86_RAX, HV_X86_RBX, HV_X86_RCX, HV_X86_RDX, HV_X86_RSI, HV_X86_RDI, HV_X86_RSP, HV_X86_RBP,
+    HV_X86_R8, HV_X86_R9, HV_X86_R10, HV_X86_R11, HV_X86_R12, HV_X86_R13, HV_X86_R14, HV_X86_R15,
+    HV_X86_RIP, HV_X86_RFLAGS
+};
 #endif
 #elif __aarch64__
 #ifdef __linux__
-    wreg(vcpu, REG_ID(regs.pc), instruction_pointer);
-    wreg(vcpu, REG_ID(sp_el1), stack_pointer);
+static const uint64_t register_mapping[NUMBER_OF_REGISTERS] = {
+    REG_ID(regs.regs[0]), REG_ID(regs.regs[1]), REG_ID(regs.regs[2]), REG_ID(regs.regs[3]), REG_ID(regs.regs[4]), REG_ID(regs.regs[5]), REG_ID(regs.regs[6]), REG_ID(regs.regs[7]),
+    REG_ID(regs.regs[8]), REG_ID(regs.regs[9]), REG_ID(regs.regs[10]), REG_ID(regs.regs[11]), REG_ID(regs.regs[12]), REG_ID(regs.regs[13]), REG_ID(regs.regs[14]), REG_ID(regs.regs[15]),
+    REG_ID(regs.regs[16]), REG_ID(regs.regs[17]), REG_ID(regs.regs[18]), REG_ID(regs.regs[19]), REG_ID(regs.regs[20]), REG_ID(regs.regs[21]), REG_ID(regs.regs[22]), REG_ID(regs.regs[23]),
+    REG_ID(regs.regs[24]), REG_ID(regs.regs[25]), REG_ID(regs.regs[26]), REG_ID(regs.regs[27]), REG_ID(regs.regs[28]), REG_ID(regs.regs[29]), REG_ID(regs.regs[30]),
+    0, REG_ID(regs.pc), REG_ID(regs.pstate)
+};
 #elif __APPLE__
-    assert(hv_vcpu_set_reg(vcpu->id, HV_REG_PC, instruction_pointer) == 0);
-    assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_SP_EL1, stack_pointer) == 0);
+static const hv_reg_t register_mapping[NUMBER_OF_REGISTERS] = {
+    HV_REG_X0, HV_REG_X1, HV_REG_X2, HV_REG_X3, HV_REG_X4, HV_REG_X5, HV_REG_X6, HV_REG_X7,
+    HV_REG_X8, HV_REG_X9, HV_REG_X10, HV_REG_X11, HV_REG_X12, HV_REG_X13, HV_REG_X14, HV_REG_X15,
+    HV_REG_X16, HV_REG_X17, HV_REG_X18, HV_REG_X19, HV_REG_X20, HV_REG_X21, HV_REG_X22, HV_REG_X23,
+    HV_REG_X24, HV_REG_X25, HV_REG_X26, HV_REG_X27, HV_REG_X28, HV_REG_FP, HV_REG_LR,
+    0, HV_REG_PC, HV_REG_CPSR
+};
+#endif
+#endif
+
+uint64_t get_register_of_vcpu(struct vcpu* vcpu, uint64_t register_index) {
+#ifdef __x86_64__
+    assert(register_index < NUMBER_OF_REGISTERS);
+#ifdef __linux__
+    uint64_t regs[sizeof(struct kvm_regs) / sizeof(uint64_t)];
+    vcpu_ctl(vcpu, KVM_GET_REGS, (uint64_t)&regs);
+    return regs[register_mapping[register_index]];
+    // return rreg(vcpu, register_mapping[register_index]);
+#elif __APPLE__
+    uint64_t value;
+    assert(hv_vcpu_read_register(vcpu->id, register_mapping[register_index], &value) == 0);
+    return value;
+#endif
+#elif __aarch64__
+    assert(register_index < NUMBER_OF_REGISTERS);
+#ifdef __linux__
+    if(register_index == 31) {
+        uint64_t pstate = rreg(vcpu, REG_ID(regs.pstate));
+        return rreg(vcpu, ((pstate & 1) != 0) ? REG_ID(sp_el1) : REG_ID(regs.sp));
+    } else
+        return rreg(vcpu, register_mapping[register_index]);
+#elif __APPLE__
+    uint64_t value;
+    if(register_index == 31) {
+        uint64_t pstate;
+        assert(hv_vcpu_get_reg(vcpu->id, HV_REG_CPSR, &pstate) == 0);
+        assert(hv_vcpu_get_sys_reg(vcpu->id, ((pstate & 1) != 0) ? HV_SYS_REG_SP_EL1 : HV_SYS_REG_SP_EL0, &value) == 0);
+    } else
+        assert(hv_vcpu_get_reg(vcpu->id, register_mapping[register_index], &value) == 0);
+    return value;
 #endif
 #endif
 }
 
-void get_program_pointers_of_vcpu(struct vcpu* vcpu, uint64_t* instruction_pointer, uint64_t* stack_pointer) {
+void set_register_of_vcpu(struct vcpu* vcpu, uint64_t register_index, uint64_t value) {
 #ifdef __x86_64__
+    assert(register_index < NUMBER_OF_REGISTERS);
 #ifdef __linux__
-    struct kvm_regs regs;
+    uint64_t regs[sizeof(struct kvm_regs) / sizeof(uint64_t)];
     vcpu_ctl(vcpu, KVM_GET_REGS, (uint64_t)&regs);
-    *instruction_pointer = regs.rip;
-    *stack_pointer = regs.rsp;
+    regs[register_mapping[register_index]] = value;
+    vcpu_ctl(vcpu, KVM_SET_REGS, (uint64_t)&regs);
+    // wreg(vcpu, register_mapping[register_index], value);
 #elif __APPLE__
-    *instruction_pointer = rvmcs(vcpu, VMCS_GUEST_RIP);
-    *stack_pointer = rvmcs(vcpu, VMCS_GUEST_RSP);
+    switch(register_index) {
+        case 6:
+            wvmcs(vcpu, VMCS_GUEST_RSP, value);
+            break;
+        case 16:
+            wvmcs(vcpu, VMCS_GUEST_RIP, value);
+            break;
+        case 17:
+            wvmcs(vcpu, VMCS_GUEST_RFLAGS, value);
+            break;
+        default:
+            assert(hv_vcpu_write_register(vcpu->id, register_mapping[register_index], value) == 0);
+            break;
+    }
 #endif
 #elif __aarch64__
+    assert(register_index < NUMBER_OF_REGISTERS);
 #ifdef __linux__
-    *instruction_pointer = rreg(vcpu, REG_ID(regs.pc));
-    *stack_pointer = rreg(vcpu, REG_ID(sp_el1));
+    if(register_index == 31) {
+        uint64_t pstate = rreg(vcpu, REG_ID(regs.pstate));
+        wreg(vcpu, ((pstate & 1) != 0) ? REG_ID(sp_el1) : REG_ID(regs.sp), value);
+    } else
+        wreg(vcpu, register_mapping[register_index], value);
 #elif __APPLE__
-    assert(hv_vcpu_get_reg(vcpu->id, HV_REG_PC, instruction_pointer) == 0);
-    assert(hv_vcpu_get_sys_reg(vcpu->id, HV_SYS_REG_SP_EL1, stack_pointer) == 0);
+    if(register_index == 31) {
+        uint64_t pstate;
+        assert(hv_vcpu_get_reg(vcpu->id, HV_REG_CPSR, &pstate) == 0);
+        assert(hv_vcpu_set_sys_reg(vcpu->id, ((pstate & 1) != 0) ? HV_SYS_REG_SP_EL1 : HV_SYS_REG_SP_EL0, value) == 0);
+    } else
+        assert(hv_vcpu_set_reg(vcpu->id, register_mapping[register_index], value) == 0);
 #endif
 #endif
 }

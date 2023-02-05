@@ -315,18 +315,24 @@ bool resolve_symbol_virtual_address_in_loaded_object(struct loaded_object* loade
     return false;
 }
 
-bool resolve_symbol_host_address_in_loaded_object(struct loaded_object* loaded_object, const char* symbol_name, uint64_t length, void** host_address) {
+bool resolve_symbol_host_address_in_loaded_object(struct loaded_object* loaded_object, bool write, const char* symbol_name, uint64_t length, void** host_address) {
     uint64_t virtual_address;
     uint64_t physical_address;
     return resolve_symbol_virtual_address_in_loaded_object(loaded_object, symbol_name, &virtual_address) &&
-        resolve_address_using_page_table(&loaded_object->page_table, virtual_address, &physical_address) &&
+        resolve_address_using_page_table(&loaded_object->page_table, write, virtual_address, &physical_address) &&
         resolve_address_of_vm(loaded_object->vm, physical_address, host_address, length);
 }
 
 struct vcpu* create_vcpu_for_loaded_object(struct loaded_object* loaded_object, const char* entry_point) {
     uint64_t instruction_pointer;
     assert(resolve_symbol_virtual_address_in_loaded_object(loaded_object, entry_point, &instruction_pointer));
-    struct vcpu* vcpu = create_vcpu(loaded_object->vm, loaded_object->page_table.guest_address);
-    set_program_pointers_of_vcpu(vcpu, instruction_pointer, loaded_object->stack_pointer);
+    struct vcpu* vcpu = create_vcpu(loaded_object->vm, &loaded_object->page_table);
+#ifdef __x86_64__
+    set_register_of_vcpu(vcpu, 6, loaded_object->stack_pointer);
+    set_register_of_vcpu(vcpu, 16, instruction_pointer);
+#elif __aarch64__
+    set_register_of_vcpu(vcpu, 31, loaded_object->stack_pointer);
+    set_register_of_vcpu(vcpu, 32, instruction_pointer);
+#endif
     return vcpu;
 }
