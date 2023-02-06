@@ -47,3 +47,7 @@ void destroy_loaded_object(struct loaded_object* loaded_object);
 bool resolve_symbol_virtual_address_in_loaded_object(struct loaded_object* loaded_object, const char* symbol_name, uint64_t* virtual_address);
 bool resolve_symbol_host_address_in_loaded_object(struct loaded_object* loaded_object, bool write, const char* symbol_name, uint64_t length, void** host_address);
 struct vcpu* create_vcpu_for_loaded_object(struct loaded_object* loaded_object, const char* entry_point);
+
+struct debugger_server* create_debugger_server(uint64_t number_of_vcpus, struct vcpu* vcpus[number_of_vcpus], uint16_t port, bool localhost_only);
+void destroy_debugger_server(struct debugger_server* debugger);
+void run_debugger_server(struct debugger_server* debugger);

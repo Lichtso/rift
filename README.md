@@ -35,9 +35,29 @@ It is surprisingly hard (especially on x86-64, not so much on AArch64) to get a 
 ## Supported Platforms
 - Operating Systems: Linux (using [KVM](https://www.kernel.org/doc/Documentation/virtual/kvm/api.txt)) and macOS (using [HVF](https://developer.apple.com/documentation/hypervisor))
 - CPU ISAs: x86-64 / amd64, AArch64 / arm64
+- Executable Formats: ELF, Mach-O
+- Remote Debugger: GDB 12, LLDB 14
+
+## Getting Started
+Checkout, build, run example in test mode.
+```bash
+git clone https://github.com/Lichtso/rift.git
+cd rift/
+make
+build/example -t
+```
+
+If you use VSCode and have the [CodeLLDB extension](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) installed,
+you can also start the example as debugger server and then use the "Run and Debug" section in VSCode.
+```bash
+build/example -d
+```
+
+## Known Issues
+- On x86-64 macOS `VMX_REASON_EPT_VIOLATION` is triggered for every guest page when it is first accessed.
+- GDB does not accept the x86-64 arch description XML.
 
 ## Shortcomings / Future Work
-- Debugging is almost impossible: There are no file handles, not even stdin or stdout, and a normal debugger will not be able to go inside virtualized threads.
 - Shared memory is currently the only form of communication with these threads as there are no other synchronization mechanisms (mutex, semaphore, barrier, etc.) for them.
 - Interrupt controllers and interrupt handling are not implemented.
 - Furthermore, spawning child processes by forking is undefined behavior for now.

@@ -298,7 +298,7 @@ bool resolve_symbol_virtual_address_in_loaded_object(struct loaded_object* loade
         case ELF_MAGIC: {
             struct elf64_sym* symbols = (struct elf64_sym*)loaded_object->symbol_table;
             for(size_t i = 0; i < loaded_object->number_of_symbols; ++i)
-                if(strcmp(loaded_object->symbol_names + symbols[i].st_name, symbol_name) == 0) {
+                if((symbols[i].st_info & 0x10) != 0 && strcmp(loaded_object->symbol_names + symbols[i].st_name, symbol_name) == 0) {
                     *virtual_address = symbols[i].st_value;
                     return true;
                 }
@@ -306,7 +306,7 @@ bool resolve_symbol_virtual_address_in_loaded_object(struct loaded_object* loade
         case MACH_MAGIC: {
             struct mach_symbol_table_entry_64* symbols = (struct mach_symbol_table_entry_64*)loaded_object->symbol_table;
             for(size_t i = 0; i < loaded_object->number_of_symbols; ++i)
-                if(strcmp(loaded_object->symbol_names + symbols[i].n_strx, symbol_name) == 0) {
+                if(symbols[i].n_type == 0x0F && strcmp(loaded_object->symbol_names + symbols[i].n_strx, symbol_name) == 0) {
                     *virtual_address = symbols[i].n_value;
                     return true;
                 }

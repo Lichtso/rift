@@ -1,0 +1,12 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Rift",
+            "type": "lldb",
+            "request": "custom",
+            "targetCreateCommands": ["target create ${workspaceFolder}/build/payload"],
+            "processCreateCommands": ["gdb-remote localhost:12345"]
+        }
+    ]
+}
