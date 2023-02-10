@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <arpa/inet.h>
 #include "platform.h"
 
@@ -15,12 +16,6 @@ char arch_description_xml[] = {
 #elif __aarch64__
 // triple: aarch64-unknown-unknown
 #define ARCH_TRIPLE "616172636836342D756E6B6E6F776E2D756E6B6E6F776E"
-#endif
-
-#ifdef __linux__
-#define PRIx64 "lx"
-#elif __APPLE__
-#define PRIx64 "llx"
 #endif
 
 struct debugger_server {

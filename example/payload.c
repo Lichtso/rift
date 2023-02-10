@@ -1,19 +1,20 @@
+#include <stdint.h>
+
+#ifdef __x86_64__
+#define EXIT __asm__("hlt");
+#elif __aarch64__
+#define EXIT __asm__("ldr x0, #8\nhvc #0\n.long 0x84000008");
+#endif
 #define EXPORT __attribute__((visibility("default")))
 
-static const char rodata[4] = { 1, 2, 3, 4 };
-EXPORT char data[4] = { 1, 2, 3, 4 };
-static char bss[0x10000UL];
+EXPORT __attribute__((aligned(0x4000))) uint8_t empty_pages[0x10000000UL];
+EXPORT uint64_t used_memory = 0x40000000UL;
+static const uint8_t rodata[4] = { 5, 6, 7, 8 };
+EXPORT uint8_t data[4] = { 1, 2, 3, 4 };
 
-void test() {
-    data[1] = 5;
-    bss[2] = rodata[0];
-}
+#include "benchmark.h"
 
-EXPORT void start() {
-    test();
-#ifdef __x86_64__
-    __asm__("hlt");
-#elif __aarch64__
-    __asm__("ldr x0, #8\nhvc #0\n.long 0x84000008");
-#endif
+EXPORT void test() {
+    data[1] = rodata[0];
+    EXIT
 }

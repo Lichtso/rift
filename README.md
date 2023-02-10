@@ -55,6 +55,7 @@ build/example -d
 
 ## Known Issues
 - On x86-64 macOS `VMX_REASON_EPT_VIOLATION` is triggered for every guest page when it is first accessed.
+- On x86-64 macOS `VMX_REASON_IRQ` is triggered for every time the thread is preempted by the watchdog timer of the outer kernel.
 - GDB does not accept the x86-64 arch description XML.
 
 ## Shortcomings / Future Work
