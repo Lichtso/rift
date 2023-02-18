@@ -1,7 +1,7 @@
 #define NUMBER_OF_REGISTERS 34
 
 // Page table entry
-#define PT_PRE           (3UL << 0)   // present / valid
+#define PT_PRE           (1UL << 0)   // present / valid
 #define PT_NOT_LEAF      (1UL << 1)   // table not a block
 #define PT_MEM           (0UL << 2)   // attribute index: normal memory
 #define PT_USER          (1UL << 6)   // unprivileged
