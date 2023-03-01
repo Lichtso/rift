@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <signal.h>
 #include <sys/mman.h>
 #include <time.h>
@@ -11,6 +12,7 @@
 static uint8_t* empty_pages;
 static uint64_t used_memory;
 #include "benchmark.h"
+#include "host_page_fault.h"
 
 #ifdef __APPLE__
 #define SYMBOL_NAME_PREFIX "_"
@@ -39,25 +41,6 @@ static uint64_t used_memory;
     run_vcpu(vcpu); \
     end_time = clock(); \
     destroy_vcpu(vcpu); \
-}
-
-#define GUEST_PAGE_SIZE 4096
-
-void page_fault_handler(int signal, siginfo_t* info, void* context) {
-    (void)signal;
-    (void)context;
-    uint64_t page_address = (uint64_t)info->si_addr / GUEST_PAGE_SIZE * GUEST_PAGE_SIZE;
-    assert(mprotect((void*)page_address, GUEST_PAGE_SIZE, PROT_READ | PROT_WRITE) >= 0);
-}
-
-void register_page_fault_handler(void* base, uint64_t length) {
-    struct sigaction new;
-    new.sa_sigaction = page_fault_handler;
-    new.sa_flags = SA_SIGINFO;
-    sigemptyset(&new.sa_mask);
-    assert(sigaction(SIGBUS, &new, NULL) >= 0);
-    assert(sigaction(SIGSEGV, &new, NULL) >= 0);
-    assert(mprotect(base, length, PROT_READ) >= 0);
 }
 
 int main(int argc, char** argv) {
