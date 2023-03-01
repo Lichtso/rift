@@ -21,3 +21,4 @@
 #define TTBR1_EL1        0xC101
 #define TCR_EL1          0xC102
 #define MAIR_EL1         0xC510
+#define VBAR_EL1         0xC600

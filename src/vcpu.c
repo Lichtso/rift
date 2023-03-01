@@ -39,7 +39,7 @@ void wvmcs(struct vcpu* vcpu, uint32_t id, uint64_t v) {
 #endif
 #endif
 
-struct vcpu* create_vcpu(struct vm* vm, struct host_to_guest_mapping* page_table) {
+struct vcpu* create_vcpu(struct vm* vm, struct host_to_guest_mapping* page_table, uint64_t interrupt_table_pointer) {
     struct vcpu* vcpu = malloc(sizeof(struct vcpu));
     vcpu->vm = vm;
     vcpu->page_table = page_table;
@@ -83,8 +83,16 @@ struct vcpu* create_vcpu(struct vm* vm, struct host_to_guest_mapping* page_table
 #ifdef __linux__
     struct kvm_sregs sregs;
     vcpu_ctl(vcpu, KVM_GET_SREGS, (uint64_t)&sregs);
+    sregs.gdt.base = interrupt_table_pointer + 0x1000UL;
+    sregs.gdt.limit = 0xFFFUL;
+    sregs.idt.base = interrupt_table_pointer;
+    sregs.idt.limit = 0xFFFUL;
     uint16_t selectors[8] = { 1, 0, 0, 0, 0, 0, 2, 0 }; // CS, DS, ES, FS, GS, SS, TR, LDT
 #elif __APPLE__
+    wvmcs(vcpu, VMCS_GUEST_GDTR_BASE, interrupt_table_pointer + 0x1000UL);
+    wvmcs(vcpu, VMCS_GUEST_GDTR_LIMIT, 0xFFFUL);
+    wvmcs(vcpu, VMCS_GUEST_IDTR_BASE, interrupt_table_pointer);
+    wvmcs(vcpu, VMCS_GUEST_IDTR_LIMIT, 0xFFFUL);
     uint16_t selectors[8] = { 0, 1, 0, 0, 0, 0, 0, 2 }; // ES, CS, SS, DS, FS, GS, LDT, TR
 #endif
     for(uint32_t segment_index = 0UL; segment_index < sizeof selectors / sizeof *selectors; ++segment_index) {
@@ -160,6 +168,7 @@ struct vcpu* create_vcpu(struct vm* vm, struct host_to_guest_mapping* page_table
     wreg(vcpu, MSR_ID(TCR_EL1), tcr_el1);
     wreg(vcpu, MSR_ID(TTBR0_EL1), vcpu->page_table->guest_address);
     wreg(vcpu, MSR_ID(TTBR1_EL1), vcpu->page_table->guest_address);
+    wreg(vcpu, MSR_ID(VBAR_EL1), interrupt_table_pointer);
     wreg(vcpu, MSR_ID(SCTLR_EL1), sctlr_el1);
     wreg(vcpu, REG_ID(regs.pstate), pstate);
 #elif __APPLE__
@@ -167,6 +176,7 @@ struct vcpu* create_vcpu(struct vm* vm, struct host_to_guest_mapping* page_table
     assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_TCR_EL1, tcr_el1) == 0);
     assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_TTBR0_EL1, vcpu->page_table->guest_address) == 0);
     assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_TTBR1_EL1, vcpu->page_table->guest_address) == 0);
+    assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_VBAR_EL1, interrupt_table_pointer) == 0);
     assert(hv_vcpu_set_sys_reg(vcpu->id, HV_SYS_REG_SCTLR_EL1, sctlr_el1) == 0);
     assert(hv_vcpu_set_reg(vcpu->id, HV_REG_CPSR, pstate) == 0);
 #endif

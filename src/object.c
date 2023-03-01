@@ -120,6 +120,18 @@ int compare_vmaddr_of_mach_segments(const void* ptr_a, const void* ptr_b)  {
     return 0;
 }
 
+#ifdef __x86_64__
+struct interrupt_gate_64 {
+    uint16_t offset0;
+    uint16_t segment_selector;
+    uint8_t ist;
+    uint8_t type_attributes;
+    uint16_t offset1;
+    uint32_t offset2;
+    uint32_t padding;
+};
+#endif
+
 struct loaded_object {
     uint64_t number_of_symbols;
     uint64_t stack_pointer;
@@ -342,10 +354,29 @@ bool resolve_symbol_host_address_in_loaded_object(struct loaded_object* loaded_o
         resolve_address_of_vm(loaded_object->vm, physical_address, host_address, length);
 }
 
-struct vcpu* create_vcpu_for_loaded_object(struct loaded_object* loaded_object, const char* entry_point) {
+struct vcpu* create_vcpu_for_loaded_object(struct loaded_object* loaded_object, const char* interrupt_table, const char* entry_point) {
     uint64_t instruction_pointer;
     assert(resolve_symbol_virtual_address_in_loaded_object(loaded_object, entry_point, &instruction_pointer));
-    struct vcpu* vcpu = create_vcpu(loaded_object->vm, &loaded_object->page_table);
+    uint64_t interrupt_table_virtual_address = 0;
+    if(interrupt_table) {
+        assert(resolve_symbol_virtual_address_in_loaded_object(loaded_object, interrupt_table, &interrupt_table_virtual_address));
+#ifdef __x86_64__
+        uint64_t interrupt_table_physical_address;
+        assert(resolve_address_using_page_table(&loaded_object->page_table, false, interrupt_table_virtual_address, &interrupt_table_physical_address));
+        void* interrupt_table_host_address;
+        assert(resolve_address_of_vm(loaded_object->vm, interrupt_table_physical_address, &interrupt_table_host_address, 0x1000));
+        uint64_t* interrupt_table_src = (uint64_t*)interrupt_table_host_address;
+        struct interrupt_gate_64* interrupt_table_dst = (struct interrupt_gate_64*)interrupt_table_host_address;
+        for(size_t i = 0; i < 256; ++i) {
+            uint64_t entry = interrupt_table_src[i * 2 + 1];
+            interrupt_table_dst[i].offset0 = entry & 0xFFFFUL;
+            interrupt_table_dst[i].offset1 = (entry >> 16) & 0xFFFFUL;
+            interrupt_table_dst[i].offset2 = (entry >> 32) & 0xFFFFFFFFUL;
+            interrupt_table_dst[i].padding = 0;
+        }
+#endif
+    }
+    struct vcpu* vcpu = create_vcpu(loaded_object->vm, &loaded_object->page_table, interrupt_table_virtual_address);
 #ifdef __x86_64__
     set_register_of_vcpu(vcpu, 6, loaded_object->stack_pointer);
     set_register_of_vcpu(vcpu, 16, instruction_pointer);

@@ -11,14 +11,10 @@
 
 static uint8_t* empty_pages;
 static uint64_t used_memory;
+#define EXPORT
+#define EXIT
 #include "benchmark.h"
 #include "host_page_fault.h"
-
-#ifdef __APPLE__
-#define SYMBOL_NAME_PREFIX "_"
-#else
-#define SYMBOL_NAME_PREFIX
-#endif
 
 #define RUN_HOST_BENCHMARK(name, madv) { \
     if(madv != 0) \
@@ -36,7 +32,7 @@ static uint64_t used_memory;
         assert(resolve_symbol_host_address_in_loaded_object(loaded_object, true, SYMBOL_NAME_PREFIX "empty_pages", sizeof(empty_pages), &ptr)); \
         assert(madvise(ptr, sizeof(empty_pages), madv) == 0); \
     } \
-    vcpu = create_vcpu_for_loaded_object(loaded_object, SYMBOL_NAME_PREFIX #name); \
+    vcpu = create_vcpu_for_loaded_object(loaded_object, SYMBOL_NAME_PREFIX "interrupt_table", SYMBOL_NAME_PREFIX #name); \
     start_time = clock(); \
     run_vcpu(vcpu); \
     end_time = clock(); \
@@ -53,7 +49,7 @@ int main(int argc, char** argv) {
     switch(argv[1][1]) {
         case 'd': {
             // Run debugger server
-            vcpu = create_vcpu_for_loaded_object(loaded_object, SYMBOL_NAME_PREFIX "test");
+            vcpu = create_vcpu_for_loaded_object(loaded_object, SYMBOL_NAME_PREFIX "interrupt_table", SYMBOL_NAME_PREFIX "test");
             struct vcpu* vcpus[1] = { vcpu };
             struct debugger_server* debugger = create_debugger_server(sizeof(vcpus) / sizeof(vcpus[0]), vcpus, 12345, true);
             run_debugger_server(debugger);
@@ -62,13 +58,13 @@ int main(int argc, char** argv) {
         } break;
         case 't': {
             // Run test
-            vcpu = create_vcpu_for_loaded_object(loaded_object, SYMBOL_NAME_PREFIX "test");
+            vcpu = create_vcpu_for_loaded_object(loaded_object, SYMBOL_NAME_PREFIX "interrupt_table", SYMBOL_NAME_PREFIX "test");
             run_vcpu(vcpu);
             destroy_vcpu(vcpu);
             // Check results
-            void* data;
-            assert(resolve_symbol_host_address_in_loaded_object(loaded_object, false, SYMBOL_NAME_PREFIX "data", 4, &data));
-            assert(((uint8_t*)data)[1] == 5);
+            void* ptr;
+            assert(resolve_symbol_host_address_in_loaded_object(loaded_object, true, SYMBOL_NAME_PREFIX "used_memory", sizeof(uint64_t), &ptr));
+            assert(*((uint64_t*)ptr) == 0xDEADBEEF);
         } break;
         case 'b': {
             assert(argc == 4);
