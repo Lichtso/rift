@@ -36,6 +36,7 @@ It is surprisingly hard (especially on x86-64, not so much on AArch64) to get a 
 - Operating Systems: Linux (using [KVM](https://www.kernel.org/doc/Documentation/virtual/kvm/api.txt)) and macOS (using [HVF](https://developer.apple.com/documentation/hypervisor))
 - CPU ISAs: x86-64 / amd64, AArch64 / arm64
 - Executable Formats: ELF, Mach-O
+- Compilers: GCC, LLVM Clang
 - Remote Debugger: GDB 12, LLDB 14
 
 ## Getting Started

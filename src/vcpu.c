@@ -108,7 +108,7 @@ struct vcpu* create_vcpu(struct vm* vm, struct host_to_guest_mapping* page_table
 #elif __APPLE__
         if(selector == 0UL)
             access_rights = 0x10000UL;
-        wvmcs(vcpu, VMCS_GUEST_ES, selector * 8UL);
+        wvmcs(vcpu, VMCS_GUEST_ES + segment_index * 2UL, selector * 8UL);
         wvmcs(vcpu, VMCS_GUEST_ES_BASE + segment_index * 2UL, base);
         wvmcs(vcpu, VMCS_GUEST_ES_LIMIT + segment_index * 2UL, limit);
         wvmcs(vcpu, VMCS_GUEST_ES_AR + segment_index * 2UL, access_rights);

@@ -7,7 +7,7 @@ ifeq ($(UNAME_S),Darwin)
 	PAYLOAD_LAYOUT = -bundle -Wl,-dead_strip_dylibs -Wl,-merge_zero_fill_sections -Wl,-pagezero_size,0 -Wl,-segaddr,__TEXT,200000  -Wl,-segaddr,__RODATA,400000 -Wl,-segaddr,__DATA,600000 -Wl,-rename_section,__TEXT,__const,__RODATA,__const
 else
 	SHARED_OBJECT = so
-	PAYLOAD_LAYOUT = -nostdlib -Wl,-T,example/payload.ld
+	PAYLOAD_LAYOUT = -nostdlib -static -Wl,-T,example/payload.ld
 endif
 
 HEADERS := $(wildcard src/*.h src/arch/*.h)
