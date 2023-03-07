@@ -100,14 +100,6 @@ bool resolve_address_of_vm(struct vm* vm, uint64_t guest_address, void** host_ad
     return false;
 }
 
-#define GUEST_PAGE_TABLE_LEVELS 4
-#define GUEST_HUGE_PAGE_TABLE_LEVELS 0
-#define GUEST_PAGE_TABLE_ENTRY_SHIFT 3
-#define GUEST_ENTRIES_PER_PAGE_SHIFT 9
-#define GUEST_ENTRIES_PER_PAGE (1UL << GUEST_ENTRIES_PER_PAGE_SHIFT)
-#define GUEST_PAGE_SIZE (1UL << (GUEST_ENTRIES_PER_PAGE_SHIFT + GUEST_PAGE_TABLE_ENTRY_SHIFT))
-#define GUEST_ENTRY_ADDRESS_MASK (~((0xFFFFUL << 48) | (GUEST_PAGE_SIZE - 1)))
-
 #define MAPPING_LEVELS_LOOP \
     uint64_t end_virtual_address; \
     if(mapping_index + 1 < number_of_mappings) \
@@ -244,27 +236,7 @@ void create_page_table(struct host_to_guest_mapping* page_table, uint64_t number
     }
 }
 
-bool resolve_address_using_page_table(struct host_to_guest_mapping* page_table, bool write, uint64_t virtual_address, uint64_t* physical_address) {
+bool resolve_address_using_page_table(struct host_to_guest_mapping* page_table, bool write_access, uint64_t virtual_address, uint64_t* physical_address) {
     *physical_address = page_table->guest_address;
-    size_t parent_level = GUEST_PAGE_TABLE_LEVELS;
-    while(1) {
-        uint64_t slot_index = (virtual_address >> (GUEST_ENTRIES_PER_PAGE_SHIFT * parent_level + GUEST_PAGE_TABLE_ENTRY_SHIFT)) & (GUEST_ENTRIES_PER_PAGE - 1);
-        uint64_t* entry = (uint64_t*)(*physical_address - page_table->guest_address + slot_index * sizeof(uint64_t) + (uint64_t)page_table->host_address);
-#ifdef __x86_64__
-        if((*entry & PT_PRE) == 0 || (write && (*entry & PT_RW) == 0))
-#elif __aarch64__
-        if((*entry & PT_PRE) == 0 || (write && (*entry & PT_RO) != 0))
-#endif
-            return false;
-        *physical_address = *entry & GUEST_ENTRY_ADDRESS_MASK;
-#ifdef __x86_64__
-        if(parent_level == 1 || (*entry & PT_LEAF) != 0)
-#elif __aarch64__
-        if(parent_level == 1 || (*entry & PT_NOT_LEAF) == 0)
-#endif
-            break;
-        --parent_level;
-    }
-    *physical_address += virtual_address & (((uint64_t)1UL << (GUEST_ENTRIES_PER_PAGE_SHIFT * parent_level + GUEST_PAGE_TABLE_ENTRY_SHIFT)) - 1UL);
-    return true;
+    return walk_page_table(write_access, (uint64_t)page_table->host_address - (uint64_t)page_table->guest_address, virtual_address, physical_address);
 }

@@ -22,3 +22,6 @@
 #define TCR_EL1          0xC102
 #define MAIR_EL1         0xC510
 #define VBAR_EL1         0xC600
+
+#define EXIT __asm__("ldr x0, #8\nhvc #0\n.long 0x84000008\n");
+#define BREAK_POINT __asm__(".inst 0xD4200000\n");

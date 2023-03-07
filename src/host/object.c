@@ -346,11 +346,11 @@ bool resolve_symbol_virtual_address_in_loaded_object(struct loaded_object* loade
     return false;
 }
 
-bool resolve_symbol_host_address_in_loaded_object(struct loaded_object* loaded_object, bool write, const char* symbol_name, uint64_t length, void** host_address) {
+bool resolve_symbol_host_address_in_loaded_object(struct loaded_object* loaded_object, bool write_access, const char* symbol_name, uint64_t length, void** host_address) {
     uint64_t virtual_address;
     uint64_t physical_address;
     return resolve_symbol_virtual_address_in_loaded_object(loaded_object, symbol_name, &virtual_address) &&
-        resolve_address_using_page_table(&loaded_object->page_table, write, virtual_address, &physical_address) &&
+        resolve_address_using_page_table(&loaded_object->page_table, write_access, virtual_address, &physical_address) &&
         resolve_address_of_vm(loaded_object->vm, physical_address, host_address, length);
 }
 

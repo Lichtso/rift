@@ -13,6 +13,11 @@ static uint8_t* empty_pages;
 static uint64_t used_memory;
 #define EXPORT
 #define EXIT
+#ifdef __APPLE__
+#define SYMBOL_NAME_PREFIX "_"
+#else
+#define SYMBOL_NAME_PREFIX
+#endif
 #include "benchmark.h"
 #include "host_page_fault.h"
 
@@ -42,7 +47,7 @@ static uint64_t used_memory;
 int main(int argc, char** argv) {
     // Configure vm and load an object file
     struct vm* vm = create_vm();
-    struct loaded_object* loaded_object = create_loaded_object(vm, "build/payload");
+    struct loaded_object* loaded_object = create_loaded_object(vm, "build/guest/payload");
     struct vcpu* vcpu;
 
     assert(argc > 1 && strlen(argv[1]) == 2 && argv[1][0] == '-');

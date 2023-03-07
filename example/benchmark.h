@@ -1,9 +1,3 @@
-#ifdef __APPLE__
-#define SYMBOL_NAME_PREFIX "_"
-#else
-#define SYMBOL_NAME_PREFIX
-#endif
-
 #define SAMPLES 0x40000000UL
 
 uint64_t prng() {

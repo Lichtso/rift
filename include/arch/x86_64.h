@@ -24,3 +24,6 @@
 #define EFER_LME         (1U << 8)
 #define EFER_LMA         (1U << 10)
 #define EFER_NXE         (1U << 11)
+
+#define EXIT __asm__("hlt\n");
+#define BREAK_POINT __asm__("int $3\n");

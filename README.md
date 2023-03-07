@@ -45,13 +45,13 @@ Checkout, build, run example in test mode.
 git clone https://github.com/Lichtso/rift.git
 cd rift/
 make
-build/example -t
+build/host/example -t
 ```
 
 If you use VSCode and have the [CodeLLDB extension](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) installed,
 you can also start the example as debugger server and then use the "Run and Debug" section in VSCode.
 ```bash
-build/example -d
+build/host/example -d
 ```
 
 ## Known Issues

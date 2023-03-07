@@ -4,9 +4,9 @@
 
 char arch_description_xml[] = {
 #ifdef __x86_64__
-#include "../build/x86_64_xml.h"
+#include "../build/host/x86_64_xml.h"
 #elif __aarch64__
-#include "../build/aarch64_xml.h"
+#include "../build/host/aarch64_xml.h"
 #endif
 };
 

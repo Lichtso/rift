@@ -1,6 +1,5 @@
 #include <assert.h>
 #include <string.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -25,13 +24,8 @@
 #endif
 #endif
 
-#ifdef __x86_64__
-#include "arch/x86_64.h"
-#elif __aarch64__
-#include "arch/aarch64.h"
-#endif
-
 #include <rift.h>
+#include <guest.h>
 
 struct vm {
     struct host_to_guest_mapping mappings[32];
